@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>banano2live Web - 纯网页端 AI 视频/宫格图转实况照片 (Live Photo) 引擎</title>
+  <!-- 第三方轻量工具库 (支持 Apple .zip 打包、文件保存与附属 GIF 导出) -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <script src="lib/gifshot.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0e17;
+      --card-bg: rgba(20, 25, 38, 0.88);
+      --card-border: rgba(255, 255, 255, 0.09);
+      --accent: #f59e0b;
+      --accent-hover: #d97706;
+      --accent-glow: rgba(245, 158, 11, 0.25);
+      --live-gold: #fbbf24;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --success: #10b981;
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 12% 10%, rgba(245, 158, 11, 0.12), transparent 35%),
+        radial-gradient(circle at 88% 15%, rgba(59, 130, 246, 0.12), transparent 38%),
+        var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 22px;
+      line-height: 1.5;
+    }
+
+    .container { max-width: 1320px; margin: 0 auto; }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 18px;
+      margin-bottom: 22px;
+      border-bottom: 1px solid var(--card-border);
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    .logo-area { display: flex; align-items: center; gap: 14px; }
+    .logo-icon {
+      width: 46px; height: 46px;
+      border-radius: 13px;
+      background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(245, 158, 11, 0.08));
+      border: 1px solid rgba(251, 191, 36, 0.38);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px;
+      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.18);
+    }
+    .logo-title {
+      font-size: 24px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fde68a, #f59e0b, #fb923c);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.3px;
+    }
+    .badge-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 3px; }
+    .badge {
+      background: rgba(245, 158, 11, 0.14);
+      color: #fbbf24;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .badge.green {
+      background: rgba(16, 185, 129, 0.14);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .header-links { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .btn-demo {
+      background: rgba(251, 191, 36, 0.16);
+      color: #fde68a;
+      border: 1px solid rgba(251, 191, 36, 0.45);
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-demo:hover { background: var(--accent); color: #000; }
+    .btn-key {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.18fr 0.82fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 980px) { .main-grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 22px;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.32);
+    }
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .api-settings {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding: 14px;
+      background: rgba(0, 0, 0, 0.28);
+      border-radius: 12px;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+    }
+    @media (max-width: 640px) { .api-settings { grid-template-columns: 1fr; } }
+
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .field:last-child { margin-bottom: 0; }
+    .field label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+    input[type="text"], input[type="password"], input[type="number"], textarea, select {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: 9px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    select option { background: #141926; color: #f3f4f6; }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 8px 13px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.07); }
+    .tab-btn.active {
+      background: rgba(245, 158, 11, 0.16);
+      color: var(--live-gold);
+      border-color: rgba(245, 158, 11, 0.36);
+    }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    .presets-wrap { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0 14px; }
+    .preset-pill {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 5px 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .preset-pill:hover, .preset-pill.active {
+      background: var(--accent);
+      color: #000;
+      font-weight: 700;
+      border-color: var(--accent);
+    }
+
+    .upload-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    @media (max-width: 640px) { .upload-grid-2 { grid-template-columns: 1fr; } }
+
+    .upload-zone {
+      border: 2px dashed rgba(255, 255, 255, 0.16);
+      border-radius: 12px;
+      padding: 18px 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(245, 158, 11, 0.05);
+    }
+    .upload-zone p { font-size: 13px; color: var(--text); font-weight: 600; }
+    .upload-zone small { font-size: 11px; color: var(--text-muted); display: block; margin-top: 4px; }
+    .upload-preview {
+      max-height: 140px;
+      max-width: 100%;
+      border-radius: 8px;
+      margin: 10px auto 0;
+      display: none;
+      object-fit: contain;
+    }
+
+    .options-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+      gap: 12px;
+      margin: 18px 0;
+      padding: 14px;
+      background: rgba(0, 0, 0, 0.22);
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+    }
+    .switch-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .switch-label input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+
+    .btn-generate {
+      width: 100%;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b, #ea580c);
+      color: #000;
+      border: none;
+      padding: 14px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.32);
+      transition: all 0.2s;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-generate:hover { transform: translateY(-1px); box-shadow: 0 8px 25px rgba(245, 158, 11, 0.45); }
+    .btn-generate:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    /* 右侧 iOS 风格 LIVE 实况交互舞台 */
+    .live-stage-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    .live-phone-frame {
+      width: 100%;
+      max-width: 360px;
+      aspect-ratio: 1 / 1;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: #07090e;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      cursor: pointer;
+    }
+    .stage-empty {
+      text-align: center;
+      padding: 24px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .live-player-wrap {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      display: none;
+    }
+    .live-player-wrap img.live-cover {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
+    }
+    .live-player-wrap video.live-video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .live-player-wrap.playing img.live-cover {
+      transform: scale(1.035);
+      opacity: 0;
+    }
+    .live-player-wrap.playing video.live-video {
+      opacity: 1;
+      transform: scale(1.02);
+    }
+
+    /* iOS 同款同心圆 LIVE 徽标 */
+    .ios-live-badge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 10;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px 4px 8px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.68);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #f8fafc;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      transition: all 0.25s;
+    }
+    .live-player-wrap.playing .ios-live-badge {
+      background: rgba(251, 191, 36, 0.92);
+      color: #000;
+      border-color: #fde68a;
+      box-shadow: 0 0 16px rgba(251, 191, 36, 0.6);
+    }
+    .live-ring-icon {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      border: 2px dotted currentColor;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .live-ring-icon::after {
+      content: "";
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .live-player-wrap.playing .live-ring-icon {
+      animation: spin 3s linear infinite;
+    }
+
+    .live-sound-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 10;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.68);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #e2e8f0;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .live-hold-tip {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.62);
+      color: #fde68a;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 11px;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    .telemetry-bar {
+      display: none;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--card-border);
+      font-size: 12px;
+    }
+    .telemetry-item span { color: var(--text-muted); margin-right: 4px; }
+    .telemetry-item strong { color: #fde68a; }
+
+    .download-actions {
+      display: none;
+      flex-wrap: wrap;
+      gap: 8px;
+      width: 100%;
+      justify-content: center;
+    }
+    .btn-dl {
+      background: #10b981;
+      color: #fff;
+      border: none;
+      padding: 9px 14px;
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s;
+    }
+    .btn-dl:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-dl.apple { background: #3b82f6; }
+    .btn-dl.secondary { background: rgba(255, 255, 255, 0.1); border: 1px solid var(--card-border); }
+
+    .frames-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+      gap: 8px;
+      width: 100%;
+      margin-top: 10px;
+    }
+    .frame-thumb {
+      aspect-ratio: 1;
+      border-radius: 8px;
+      border: 2px solid var(--card-border);
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.35);
+      position: relative;
+      cursor: pointer;
+      transition: all 0.18s;
+    }
+    .frame-thumb:hover { border-color: rgba(251, 191, 36, 0.6); transform: translateY(-1px); }
+    .frame-thumb.active-cover {
+      border-color: var(--live-gold);
+      box-shadow: 0 0 12px rgba(251, 191, 36, 0.35);
+    }
+    .frame-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .frame-badge {
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      left: 2px;
+      background: rgba(0, 0, 0, 0.72);
+      color: #fff;
+      font-size: 10px;
+      text-align: center;
+      border-radius: 4px;
+      padding: 1px 2px;
+    }
+    .frame-thumb.active-cover .frame-badge {
+      background: var(--live-gold);
+      color: #000;
+      font-weight: 700;
+    }
+
+    .log-box {
+      margin-top: 14px;
+      background: rgba(0, 0, 0, 0.45);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 11.5px;
+      color: #34d399;
+      max-height: 120px;
+      overflow-y: auto;
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .insp-report {
+      display: none;
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 12px;
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-size: 13px;
+    }
+    .insp-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+    }
+    .insp-row:last-child { border-bottom: none; }
+
+    .b2l-toast {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 999;
+      padding: 12px 18px;
+      border-radius: 12px;
+      background: #1e293b;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      opacity: 0;
+      transform: translateY(-12px);
+      pointer-events: none;
+      transition: all 0.25s;
+    }
+    .b2l-toast.show { opacity: 1; transform: translateY(0); }
+    .b2l-toast.success { border-color: #10b981; background: rgba(6, 78, 59, 0.95); }
+    .b2l-toast.error { border-color: #ef4444; background: rgba(127, 29, 29, 0.95); }
+    .b2l-toast.warning { border-color: #f59e0b; background: rgba(120, 53, 15, 0.95); }
+
+    .spinner {
+      border: 3px solid rgba(0, 0, 0, 0.2);
+      border-top-color: #000;
+      border-radius: 50%;
+      width: 17px;
+      height: 17px;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div id="b2lToast" class="b2l-toast"></div>
+
+<div class="container">
+  <header>
+    <div class="logo-area">
+      <div class="logo-icon">◉</div>
+      <div>
+        <h1 class="logo-title">banano2live 🍌➡️📸</h1>
+        <div class="badge-row">
+          <span class="badge">Pure Web 零安装开箱即用</span>
+          <span class="badge">SDK 视频直生 + 3x3/4x4 宫格切分</span>
+          <span class="badge green">Google Motion Photo (.jpg) + Apple Live Photo (.zip)</span>
+        </div>
+      </div>
+    </div>
+    <div class="header-links">
+      <button type="button" id="btnHeaderDemo" class="btn-demo" onclick="document.getElementById('btnLoadDemoGrid').click()">
+        ⚡ 免 Key 一键生成实况示例
+      </button>
+      <a href="https://hrioapi.hrio.site" target="_blank" class="btn-key">🔑 获取 HrioAPI Key</a>
+    </div>
+  </header>
+
+  <div class="main-grid">
+    <!-- 左侧控制与工作流面板 -->
+    <div class="card">
+      <div class="card-title">
+        <span>🛠️ 实况照片全模态生成与转换台</span>
+        <span style="font-size: 12px; color: var(--text-muted); font-weight: 400;">本地浏览器处理 · 隐私安全</span>
+      </div>
+
+      <!-- API 配置栏 (SDK 生成模式使用，本地视频/本地宫格模式无需填写) -->
+      <div class="api-settings">
+        <div class="field">
+          <label>🔑 HrioAPI Key (仅 AI 视频/宫格生成需填，本地转换免填)</label>
+          <input type="password" id="apiKeyInput" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx" />
+        </div>
+        <div class="field">
+          <label>🌐 API 节点地址 (Base URL)</label>
+          <input type="text" id="baseUrlInput" value="https://hrioapi.hrio.site/v1" />
+        </div>
+      </div>
+
+      <!-- 五大核心模式切换 -->
+      <div class="tabs">
+        <button type="button" class="tab-btn active" data-tab="video-sdk">🎬 AI 视频直生实况</button>
+        <button type="button" class="tab-btn" data-tab="grid-sdk">🧩 AI 宫格切分实况</button>
+        <button type="button" class="tab-btn" data-tab="local-vid">🎥 本地视频转实况 (免Key)</button>
+        <button type="button" class="tab-btn" data-tab="local-grd">🖼️ 本地宫格转实况 (免Key)</button>
+        <button type="button" class="tab-btn" data-tab="inspector">🔍 实况验真/解包</button>
+      </div>
+
+      <!-- ==================== Tab 1: AI 视频直生转实况 (SDK /v1/videos) ==================== -->
+      <div id="pane-video-sdk" class="tab-pane active">
+        <div class="upload-grid-2" style="margin-bottom: 12px;">
+          <div class="field">
+            <label>🤖 视频生成模型 (SDK /v1/videos)</label>
+            <select id="videoModelSelect">
+              <option value="veo-3.0-fast-generate-001">veo-3.0-fast-generate-001 (Google Veo 3 Fast · 原生带音效)</option>
+              <option value="veo-3.1-fast-generate-preview">veo-3.1-fast-generate-preview (Google Veo 3.1 Fast)</option>
+              <option value="doubao-seedance-2-0-pro-fast">doubao-seedance-2-0-pro-fast (豆包 Seedance 2.0 Fast)</option>
+              <option value="seedance-2.5">seedance-2.5 (Seedance 2.5 电影级实况)</option>
+              <option value="sora-2">sora-2 (OpenAI Sora 2)</option>
+              <option value="grok-imagine-video">grok-imagine-video (Grok Imagine Video)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>📐 实况画幅与时长</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <select id="videoAspectSelect">
+                <option value="9:16">9:16 竖屏手机实况</option>
+                <option value="16:9">16:9 横屏电影实况</option>
+                <option value="1:1">1:1 方形相册实况</option>
+              </select>
+              <select id="videoDurationSelect">
+                <option value="8" selected>8 秒 (Veo 3 / Sora 标准时长 · 推荐)</option>
+                <option value="6">6 秒 (Seedance 标准时长)</option>
+                <option value="5">5 秒 (通用短视频)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>✨ 实况微动场景预设 (点击快速套用)</label>
+          <div id="videoPresetsWrap" class="presets-wrap"></div>
+        </div>
+
+        <div class="field">
+          <label>📝 实况画面与动态描述 (支持文生实况 / 图生实况 / 首尾帧实况)</label>
+          <textarea id="videoSdkPrompt" rows="2" placeholder="例如：阳光下的少女微风吹拂发丝，自然眨眼并露出温柔微笑，背景光斑闪烁">阳光下的少女微风吹拂发丝，自然眨眼并露出温柔微笑，背景柔和光斑闪烁</textarea>
+        </div>
+
+        <div class="upload-grid-2">
+          <div id="zoneVideoFirstImg" class="upload-zone">
+            <p>🖼️ 上传首帧参考图 / 实况封面 (可选)</p>
+            <small>上传后自动开启【图生视频转实况】，保持原图高颜值定格</small>
+            <input type="file" id="inputVideoFirstImg" accept="image/*" style="display:none" />
+            <img id="prevVideoFirstImg" class="upload-preview" alt="首帧预览" />
+          </div>
+          <div id="zoneVideoLastImg" class="upload-zone">
+            <p>🏁 上传尾帧参考图 (可选 · 首尾帧过渡)</p>
+            <small>同时上传首尾两张图，AI 自动生成丝滑首尾帧过渡实况</small>
+            <input type="file" id="inputVideoLastImg" accept="image/*" style="display:none" />
+            <img id="prevVideoLastImg" class="upload-preview" alt="尾帧预览" />
+          </div>
+        </div>
+
+        <div style="display:flex; gap:18px; margin-top:12px; flex-wrap:wrap;">
+          <label class="switch-label">
+            <input type="checkbox" id="videoAudioCheck" checked />
+            <span>🔊 生成并保留原视频环境音效 (generate_audio)</span>
+          </label>
+          <label class="switch-label">
+            <input type="checkbox" id="videoUseRefCoverCheck" checked />
+            <span>📸 若上传了首帧图，直接将其作为高清实况静态封面</span>
+          </label>
+        </div>
+
+        <div style="margin-top:14px; padding:12px; background:rgba(16,185,129,0.07); border:1px dashed rgba(16,185,129,0.35); border-radius:10px;">
+          <label style="font-size:12px; color:#34d399; font-weight:700; display:block; margin-bottom:6px;">
+            🔗 已有生成好的视频 URL？直接粘贴或一键转为实况照片（无需重复消耗额度）：
+          </label>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <input type="text" id="directVideoUrlInput" style="flex:1; min-width:220px;"
+              value="https://img2.hrio.site/generated/veo-30-fast-generate-001/8b52740450b45ef0754f9e92d20a9ec7-a5f941fa-9aa8-4e25-9830-4e850eb7c2fb.mp4"
+              placeholder="粘贴 https://img2.hrio.site/...mp4 视频链接" />
+            <button type="button" id="btnConvertDirectVideoUrl" class="btn-demo" style="background:#10b981; color:#fff; border-color:#059669;">
+              ⚡ 立即将该视频链接合成实况照片
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Tab 2: AI 宫格生图切分转实况 (SDK /v1/images/generations) ==================== -->
+      <div id="pane-grid-sdk" class="tab-pane">
+        <div class="field">
+          <label>🤖 宫格生图模型 (SDK /v1/images/generations)</label>
+          <select id="imageModelSelect">
+            <option value="gemini-nano-banana-2.1">gemini-nano-banana-2.1 (推荐 · 极速精准对齐)</option>
+            <option value="gpt-image-2">gpt-image-2 (高画质细节)</option>
+            <option value="gpt-image-2.5">gpt-image-2.5 (旗舰多模态生图)</option>
+            <option value="gemini-3.1-flash-image">gemini-3.1-flash-image (轻量高速)</option>
+            <option value="gemini-3-pro-image">gemini-3-pro-image (Pro 专业版)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>✨ 宫格微动作预设 (支持 3x3 九宫格 / 4x4 十六宫格)</label>
+          <div id="gridPresetsWrap" class="presets-wrap"></div>
+        </div>
+
+        <div class="field">
+          <label>📝 角色与动作描述</label>
+          <textarea id="gridSdkPrompt" rows="2" placeholder="例如：可爱的3D柴犬戴着红色围巾，微风吹动围巾开心挥手眨眼">可爱的3D柴犬戴着红色围巾，微风吹动围巾开心挥手眨眼</textarea>
+        </div>
+
+        <div class="upload-grid-2">
+          <div id="zoneGridRefImg" class="upload-zone">
+            <p>🖼️ 上传角色参考图 / 垫图锁脸 (可选)</p>
+            <small>严格锁定五官、发型与穿搭生成连续宫格实况</small>
+            <input type="file" id="inputGridRefImg" accept="image/*" style="display:none" />
+            <img id="prevGridRefImg" class="upload-preview" alt="角色参考图" />
+          </div>
+          <div id="zoneGridMotion" class="upload-zone">
+            <p>🎭 上传动作源 GIF / MP4 (可选 · 动作迁移)</p>
+            <small id="motionFileName">将现有表情包或短视频动作迁移至左侧角色图</small>
+            <input type="file" id="inputGridMotion" accept="image/gif,image/webp,video/*" style="display:none" />
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Tab 3: 本地视频 + 自定义封面转实况 (对齐并增强 Video2LivePhoto) ==================== -->
+      <div id="pane-local-vid" class="tab-pane">
+        <div class="upload-grid-2">
+          <div id="zoneLocalVideo" class="upload-zone">
+            <p>🎬 点击或拖入本地视频文件 (.mp4 / .mov / .webm)</p>
+            <small>100% 浏览器本地转换，未剪辑时零损耗直通并完整保留原视频声音</small>
+            <input type="file" id="inputLocalVideo" accept="video/*" style="display:none" />
+          </div>
+          <div class="upload-zone" id="btnUploadCustomCover">
+            <p>🖼️ 上传自定义高清封面照片 (可选)</p>
+            <small>默认使用视频首帧，也可上传任意高画质美图作为实况静态封面</small>
+            <input type="file" id="inputCustomCover" accept="image/*" style="display:none" />
+            <img id="localCoverPreview" class="upload-preview" alt="封面预览" />
+          </div>
+        </div>
+
+        <div id="localVideoTrimSection" style="display:none; margin-top:14px; padding:14px; background:rgba(0,0,0,0.28); border-radius:12px; border:1px solid var(--card-border);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+            <strong style="font-size:13px;">✂️ 视频片段截取与封面定格</strong>
+            <span id="trimDurationBadge" class="badge green">全片直通 (无损保留原视频与原声)</span>
+          </div>
+          <video id="localVideoPlayer" controls playsinline style="width:100%; max-height:220px; border-radius:8px; background:#000; margin-bottom:10px;"></video>
+
+          <div class="upload-grid-2">
+            <div class="field">
+              <label>开始时间: <strong id="trimStartVal" style="color:var(--live-gold);">00:00.0</strong></label>
+              <input type="range" id="trimStartSlider" min="0" max="10" step="0.1" value="0" />
+            </div>
+            <div class="field">
+              <label>结束时间: <strong id="trimEndVal" style="color:var(--live-gold);">00:02.0</strong></label>
+              <input type="range" id="trimEndSlider" min="0" max="10" step="0.1" value="2" />
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; flex-wrap:wrap; gap:10px;">
+            <button type="button" id="btnCaptureVideoCover" class="btn-demo">📸 截取当前播放器画面设为实况封面</button>
+            <label class="switch-label">
+              <input type="checkbox" id="localPreserveAudioCheck" checked />
+              <span>🔊 保留原视频声音</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Tab 4: 本地宫格图离线切分转实况 ==================== -->
+      <div id="pane-local-grd" class="tab-pane">
+        <div id="zoneLocalGrid" class="upload-zone">
+          <p>🧩 点击或拖拽本地 3x3 九宫格 / 4x4 十六宫格大图到此</p>
+          <small>支持断网纯本地毫秒级切帧、BFS 边缘去底、帧间平滑插值并打包为实况照片 (.jpg / .zip)</small>
+          <input type="file" id="inputLocalGrid" accept="image/*" style="display:none" />
+          <img id="prevLocalGrid" class="upload-preview" alt="本地宫格预览" />
+        </div>
+        <div style="margin-top: 12px; text-align: center;">
+          <button type="button" id="btnLoadDemoGrid" class="btn-demo">
+            ⚡ 立即加载内置示例宫格图并合成实况照片 (零配置秒出体验)
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================== Tab 5: 实况图逆向验真与解包器 ==================== -->
+      <div id="pane-inspector" class="tab-pane">
+        <div id="zoneInspector" class="upload-zone">
+          <p>🔍 拖入任意实况照片 (.jpg Motion Photo) 进行二进制验真与无损解包</p>
+          <small>自动解析 Adobe XMP (GCamera:MotionPhoto / MicroVideoOffset) 偏移量并分离出静态封面与内嵌 MP4 视频</small>
+          <input type="file" id="inputInspector" accept="image/jpeg,.jpg,.jpeg" style="display:none" />
+        </div>
+        <div style="margin-top: 12px; text-align: center;">
+          <button type="button" id="btnInspectCurrent" class="btn-demo">
+            🔬 一键对当前已生成的实况照片执行字节级验真
+          </button>
+        </div>
+        <div id="inspectorReport" class="insp-report"></div>
+      </div>
+
+      <!-- 公共宫格与实况导出参数面板 -->
+      <div class="options-panel">
+        <div class="field">
+          <label>📱 实况导出格式</label>
+          <select id="optExportFormat">
+            <option value="both">Google (.jpg) + Apple (.zip)</option>
+            <option value="google">Google Motion Photo (.jpg 单文件)</option>
+            <option value="apple">Apple Live Photo (.zip JPG+MOV)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>⏱️ 实况图合成时长 (小红书推荐)</label>
+          <select id="optLiveDuration">
+            <option value="2.0" selected>2.0 秒 (默认黄金时长)</option>
+            <option value="1.5">1.5 秒 (轻巧极速)</option>
+            <option value="2.5">2.5 秒 (标准实况)</option>
+            <option value="3.0">3.0 秒 (iOS 上限)</option>
+            <option value="0">不裁剪 (保留原视频全长)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>📐 宫格切分规格</label>
+          <select id="optGridLayout">
+            <option value="3x3">3x3 九宫格 (9帧经典)</option>
+            <option value="4x4">4x4 十六宫格 (16帧超丝滑)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>🔄 宫格实况循环方式</label>
+          <select id="optLoopMode">
+            <option value="pingpong">乒乓往返 (1→N→1 无缝)</option>
+            <option value="loop">正序循环 (1→N 重复)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>🎨 实况底色 & 帧率</label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+            <select id="optBackdrop" title="去底后的实况背景色">
+              <option value="#FFFFFF">纯白 #FFF</option>
+              <option value="#FFF8F0">暖米 #FFF8</option>
+              <option value="#FFEBF0">樱粉 #FFEB</option>
+              <option value="#E0F2FE">晴空 #E0F2</option>
+              <option value="#0F172A">暗夜 #0F17</option>
+            </select>
+            <input type="number" id="optFps" value="16" min="8" max="30" title="帧率 FPS" />
+          </div>
+        </div>
+        <div style="display:flex; flex-direction:column; justify-content:center; gap:6px;">
+          <label class="switch-label">
+            <input type="checkbox" id="optTransparent" checked />
+            <span>👻 智能 BFS 去底</span>
+          </label>
+          <label class="switch-label">
+            <input type="checkbox" id="opt4k" />
+            <span>💎 4K 超清 (4096px)</span>
+          </label>
+        </div>
+      </div>
+
+      <button type="button" id="btnMainGenerate" class="btn-generate">
+        <span>🚀 一键生成实况照片 (Live Photo)</span>
+      </button>
+    </div>
+
+    <!-- 右侧 iOS 风格 LIVE 实况交互舞台与序列帧画廊 -->
+    <div class="card">
+      <div class="card-title">
+        <span>📱 实况照片交互预览舞台</span>
+        <button type="button" id="btnPlayLiveToggle" class="btn-demo" style="padding: 4px 10px; font-size: 12px;">
+          ▶ 播放 / 停止实况
+        </button>
+      </div>
+
+      <div class="live-stage-container">
+        <div class="live-phone-frame">
+          <div id="stageEmptyHint" class="stage-empty">
+            <div style="font-size: 38px; margin-bottom: 8px;">◉</div>
+            <p id="stageStatusText">点击顶部「⚡ 免 Key 一键生成实况示例」或左侧生成按钮</p>
+            <small style="display:block; margin-top:6px; opacity:0.75;">生成后按住画面即可体验 iOS 同款 LIVE 实况播放与原声</small>
+          </div>
+
+          <div id="livePlayerWrap" class="live-player-wrap">
+            <div class="ios-live-badge">
+              <span class="live-ring-icon"></span>
+              <span>LIVE</span>
+            </div>
+            <div id="liveSoundBadge" class="live-sound-badge" title="点击切换静音/原声">🔊 原声</div>
+            <img id="liveStageCover" class="live-cover" alt="Live Photo Cover" />
+            <video id="liveStageVideo" class="live-video" playsinline></video>
+            <div class="live-hold-tip">👆 按住画面或点击右上角按钮播放实况 (Hold to Play LIVE)</div>
+          </div>
+        </div>
+
+        <!-- 实况二进制遥测指标栏 -->
+        <div id="liveTelemetryBar" class="telemetry-bar">
+          <div class="telemetry-item"><span>总文件大小:</span><strong id="statTotalSize">-</strong></div>
+          <div class="telemetry-item"><span>静态封面图:</span><strong id="statCoverSize">-</strong></div>
+          <div class="telemetry-item"><span>内嵌视频流:</span><strong id="statVideoSize">-</strong></div>
+          <div class="telemetry-item"><span>双规范校验:</span><strong id="statXmpStatus">-</strong></div>
+        </div>
+
+        <!-- 下载按钮矩阵 -->
+        <div id="downloadActions" class="download-actions">
+          <button type="button" id="btnDlMotionJpg" class="btn-dl" title="单张 JPG 内嵌 XMP 与视频流，安卓/小米/Google相册/Win11/群晖直接识别">
+            📱 下载实况照片 (.jpg)
+          </button>
+          <button type="button" id="btnDlAppleZip" class="btn-dl apple" title="包含同名配对的 .JPG 与 .MOV，适配 Apple / Windows / 群晖">
+            🍎 下载 Apple 实况包 (.zip)
+          </button>
+          <button type="button" id="btnDlMp4" class="btn-dl secondary">🎞️ 独立视频 (.mp4)</button>
+          <button type="button" id="btnDlCover" class="btn-dl secondary">📸 静态封面 (.jpg)</button>
+          <button type="button" id="btnDlGif" class="btn-dl secondary" style="display:none;">✨ 动图 (.gif)</button>
+        </div>
+
+        <!-- 宫格切片预览画廊 (支持点击任意帧切换实况封面) -->
+        <div style="width: 100%; margin-top: 6px;">
+          <div id="framesTitle" style="font-size: 13px; font-weight: 600; color: var(--text-muted);">
+            🧩 宫格序列帧 (点击任意单帧可将其设为实况照片静态封面)
+          </div>
+          <div id="framesGrid" class="frames-grid"></div>
+        </div>
+
+        <div id="logBox" class="log-box">
+          <div>[系统就绪] banano2live 纯前端引擎已加载：支持 SDK 视频生成、SDK 3x3/4x4 宫格切分、本地视频无损转实况与二进制验真。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 模块化核心脚本 (同时兼容 file:// 双击直接打开与 HTTP Server 部署) -->
+<script src="script/utils/file-validator.js"></script>
+<script src="script/utils/ui-helper.js"></script>
+<script src="script/core/livephoto-builder.js"></script>
+<script src="script/core/video-processor.js"></script>
+<script src="script/core/grid-slicer.js"></script>
+<script src="script/core/hrio-sdk.js"></script>
+<script src="script/app.js"></script>
+</body>
+</html>
